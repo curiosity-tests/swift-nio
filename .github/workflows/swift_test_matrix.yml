@@ -2,10 +2,19 @@ name: Matrix
 
 permissions:
   contents: read
+  id-token: write
 
 on:
   workflow_call:
     inputs:
+      chalk_on:
+        description: "racecar: instrumented arm switch, passed down by the caller"
+        type: string
+        default: "false"
+      profile:
+        description: "CrashOverride chalk profile"
+        type: string
+        default: curiosity-tests-racecar
       name:
         type: string
         description: "The name of the workflow used for the concurrency group."
@@ -20,6 +29,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.name }}
   cancel-in-progress: true
 
+env:
+  # The one variable that separates the arms: on baseline, action-checkout
+  # skips its Set up Chalk step entirely.
+  CHALK_ON: ${{ inputs.chalk_on }}
+
 jobs:
   execute-matrix:
     name: ${{ matrix.config.platform }} (${{ matrix.config.name }})
@@ -29,10 +43,20 @@ jobs:
       matrix: ${{ fromJson(inputs.matrix_string) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: crashappsec/action-checkout@main
         with:
+          chalk: ${{ env.CHALK_ON }}
+          profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+          observables_continue_on_error: false
+          lfs: false
           persist-credentials: false
           submodules: true
+      - name: Assert instrumentation is live
+        if: env.CHALK_ON == 'true'
+        run: |
+          test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+          test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
       - name: Wait for Docker daemon (Windows)
         if: ${{ matrix.config.platform == 'Windows' }}
         run: |
