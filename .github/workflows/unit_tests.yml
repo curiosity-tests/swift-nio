@@ -2,10 +2,19 @@ name: Unit tests
 
 permissions:
   contents: read
+  id-token: write
 
 on:
   workflow_call:
     inputs:
+      chalk_on:
+        description: "racecar: instrumented arm switch, passed down by the caller"
+        type: string
+        default: "false"
+      profile:
+        description: "CrashOverride chalk profile"
+        type: string
+        default: curiosity-tests-racecar
       linux_5_9_enabled:
         type: boolean
         description: "Boolean to enable the Linux 5.9 Swift version matrix job. Defaults to false."
@@ -166,6 +175,11 @@ on:
         description: "Minimum Swift version to include in the matrix. Leave empty for auto-detection from Package.swift, specify a version like '6.0' to override, or set to 'none' to disable filtering."
         default: ""
 
+env:
+  # The one variable that separates the arms: on baseline, action-checkout
+  # skips its Set up Chalk step entirely.
+  CHALK_ON: ${{ inputs.chalk_on }}
+
 jobs:
   construct-matrix:
     name: Construct unit test matrix
@@ -174,9 +188,19 @@ jobs:
       unit-test-matrix: '${{ steps.generate-matrix.outputs.unit-test-matrix }}'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: crashappsec/action-checkout@main
         with:
+          chalk: ${{ env.CHALK_ON }}
+          profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+          observables_continue_on_error: false
+          lfs: false
           persist-credentials: false
+      - name: Assert instrumentation is live
+        if: env.CHALK_ON == 'true'
+        run: |
+          test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+          test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
       - id: generate-matrix
         run: |
           # Validate and use JSON environment variables directly
@@ -236,7 +260,9 @@ jobs:
     name: Unit tests
     needs: construct-matrix
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/swift_test_matrix.yml@main
+    uses: ./.github/workflows/swift_test_matrix.yml
     with:
+      chalk_on: ${{ inputs.chalk_on }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       name: "Unit tests"
       matrix_string: '${{ needs.construct-matrix.outputs.unit-test-matrix }}'
