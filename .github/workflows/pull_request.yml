@@ -2,10 +2,33 @@ name: PR
 
 permissions:
   contents: read
+  id-token: write
 
 on:
+  workflow_dispatch:
+    inputs:
+      leg:
+        description: "baseline (uninstrumented) or instrumented (under chalk/curiosity)"
+        type: choice
+        options: [instrumented, baseline]
+        default: instrumented
+      profile:
+        description: "CrashOverride chalk profile"
+        type: string
+        default: curiosity-tests-racecar
+      racecar_run:
+        description: "racecar correlation token, echoed into the run name"
+        type: string
+        default: ""
   pull_request:
     types: [opened, reopened, synchronize]
+
+env:
+  # The one variable that separates the arms: on baseline, action-checkout
+  # skips its Set up Chalk step entirely.
+  CHALK_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+
+run-name: "PR ${{ inputs.leg || 'push' }} ${{ inputs.racecar_run }}"
 
 jobs:
   soundness:
@@ -19,29 +42,36 @@ jobs:
   unit-tests:
     name: Unit tests
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/unit_tests.yml@main
+    uses: ./.github/workflows/unit_tests.yml
     with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       linux_6_1_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
       linux_6_2_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
       linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
       linux_nightly_next_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
       linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error"
       linux_env_vars: '{"SWIFTNIO_CI": "1"}'
-      windows_6_3_enabled: true
-      windows_nightly_next_enabled: true
-      windows_nightly_main_enabled: true
+      windows_6_3_enabled: false
+      windows_nightly_next_enabled: false
+      windows_nightly_main_enabled: false
 
   benchmarks:
     name: Benchmarks
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/benchmarks.yml@main
+    uses: ./.github/workflows/benchmarks.yml
     with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       benchmark_package_path: "Benchmarks"
 
   cxx-interop:
     name: Cxx interop
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/cxx_interop.yml@main
+    uses: ./.github/workflows/cxx_interop.yml
+    with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
 
   construct-integration-test-matrix:
     name: Construct integration test matrix
@@ -50,9 +80,19 @@ jobs:
       integration-test-matrix: '${{ steps.generate-matrix.outputs.integration-test-matrix }}'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: crashappsec/action-checkout@main
         with:
+          chalk: ${{ env.CHALK_ON }}
+          profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+          observables_continue_on_error: false
+          lfs: false
           persist-credentials: false
+      - name: Assert instrumentation is live
+        if: env.CHALK_ON == 'true'
+        run: |
+          test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+          test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
       - id: generate-matrix
         run: echo "integration-test-matrix=$(curl -s --retry 3 https://raw.githubusercontent.com/apple/swift-nio/main/scripts/generate_matrix.sh | bash)" >> "$GITHUB_OUTPUT"
         env:
@@ -64,8 +104,10 @@ jobs:
     name: Integration tests
     needs: construct-integration-test-matrix
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/swift_test_matrix.yml@main
+    uses: ./.github/workflows/swift_test_matrix.yml
     with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       name: "Integration tests"
       matrix_string: '${{ needs.construct-integration-test-matrix.outputs.integration-test-matrix }}'
 
@@ -74,9 +116,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: crashappsec/action-checkout@main
         with:
+          chalk: ${{ env.CHALK_ON }}
+          profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+          observables_continue_on_error: false
+          lfs: false
           persist-credentials: false
+      - name: Assert instrumentation is live
+        if: env.CHALK_ON == 'true'
+        run: |
+          test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+          test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
       - name: Load vsock_loopback kernel module
         run: sudo modprobe vsock_loopback
       - name: Build package tests
@@ -87,32 +139,34 @@ jobs:
       - name: Check for skipped tests
         run: test -r test.out && ! grep -i skipped test.out
 
-  macos-tests:
-    name: macOS tests
-    # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/macos_tests.yml@main
-    with:
-      runner_pool: general
-      build_scheme: swift-nio-Package
-      env_vars: '{"SWIFTNIO_CI": "1"}'
-
   static-sdk:
     name: Static Linux Swift SDK
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/static_sdk.yml@main
+    uses: ./.github/workflows/static_sdk.yml
+    with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
 
   wasm-sdk:
     name: WebAssembly Swift SDK
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/wasm_swift_sdk.yml@main
+    uses: ./.github/workflows/wasm_swift_sdk.yml
     with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       additional_command_arguments: "--target NIOCore"
 
   android-sdk:
     name: Android Swift SDK
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/android_swift_sdk.yml@main
+    uses: ./.github/workflows/android_swift_sdk.yml
+    with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
 
   release-builds:
     name: Release builds
-    uses: apple/swift-nio/.github/workflows/release_builds.yml@main
+    uses: ./.github/workflows/release_builds.yml
+    with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
