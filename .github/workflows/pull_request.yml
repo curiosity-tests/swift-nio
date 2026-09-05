@@ -33,8 +33,10 @@ run-name: "PR ${{ inputs.leg || 'push' }} ${{ inputs.racecar_run }}"
 jobs:
   soundness:
     name: Soundness
-    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.10
+    uses: curiosity-tests/github-workflows/.github/workflows/soundness.yml@0.0.10-racecar
     with:
+      chalk_on: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       license_header_check_project_name: "SwiftNIO"
       # Workaround https://github.com/swiftlang/swift-docc/issues/1280
       docs_check_container_image: "swift:6.1-noble"
