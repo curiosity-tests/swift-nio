@@ -2,10 +2,19 @@ name: WebAssembly Swift SDK
 
 permissions:
   contents: read
+  id-token: write
 
 on:
   workflow_call:
     inputs:
+      chalk_on:
+        description: "racecar: instrumented arm switch, passed down by the caller"
+        type: string
+        default: "false"
+      profile:
+        description: "CrashOverride chalk profile"
+        type: string
+        default: curiosity-tests-racecar
       nightly_main_enabled:
         type: boolean
         description: "Boolean to enable the nightly-main WASM Swift SDK matrix job. Defaults to true."
@@ -27,6 +36,11 @@ on:
         description: "Additional arguments passed to swift build (the Wasm Swift SDK will be specified). Defaults to empty."
         default: ""
 
+env:
+  # The one variable that separates the arms: on baseline, action-checkout
+  # skips its Set up Chalk step entirely.
+  CHALK_ON: ${{ inputs.chalk_on }}
+
 jobs:
   construct-matrix:
     name: Construct WebAssembly Swift SDK matrix
@@ -35,9 +49,19 @@ jobs:
       wasm-swift-sdk-matrix: '${{ steps.generate-matrix.outputs.wasm-swift-sdk-matrix }}'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: crashappsec/action-checkout@main
         with:
+          chalk: ${{ env.CHALK_ON }}
+          profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
+          observables_continue_on_error: false
+          lfs: false
           persist-credentials: false
+      - name: Assert instrumentation is live
+        if: env.CHALK_ON == 'true'
+        run: |
+          test -n "${CURIOSITY_ROOT:-}" || { echo "::error::CURIOSITY_ROOT unset - observables never installed"; exit 1; }
+          test -S "${CURIOSITY_SOCKET_NAME:?socket name unset}" || { echo "::error::co-hostd socket absent"; exit 1; }
+
       - id: generate-matrix
         run: |
           # Validate JSON inputs
@@ -105,7 +129,9 @@ jobs:
     name: WebAssembly Swift SDK
     needs: construct-matrix
     # Workaround https://github.com/nektos/act/issues/1875
-    uses: apple/swift-nio/.github/workflows/swift_test_matrix.yml@main
+    uses: ./.github/workflows/swift_test_matrix.yml
     with:
+      chalk_on: ${{ inputs.chalk_on }}
+      profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       name: "WebAssembly Swift SDK"
       matrix_string: '${{ needs.construct-matrix.outputs.wasm-swift-sdk-matrix }}'
