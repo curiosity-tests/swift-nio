@@ -26,8 +26,8 @@ on:
 
 # We will cancel previously triggered workflow runs
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.name }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.name }}-${{ inputs.chalk_on }}
+  cancel-in-progress: false
 
 env:
   # The one variable that separates the arms: on baseline, action-checkout
