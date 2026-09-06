@@ -26,7 +26,7 @@ on:
 env:
   # The one variable that separates the arms: on baseline, action-checkout
   # skips its Set up Chalk step entirely.
-  CHALK_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline' }}
+  CHALK_ON: ${{ inputs.leg == 'instrumented' }}
 
 run-name: "PR ${{ inputs.leg || 'push' }} ${{ inputs.racecar_run }}"
 
@@ -35,7 +35,7 @@ jobs:
     name: Soundness
     uses: curiosity-tests/github-workflows/.github/workflows/soundness.yml@0.0.10-racecar
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       license_header_check_project_name: "SwiftNIO"
       # Workaround https://github.com/swiftlang/swift-docc/issues/1280
@@ -46,7 +46,7 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: ./.github/workflows/unit_tests.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       linux_6_1_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
       linux_6_2_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error"
@@ -63,7 +63,7 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: ./.github/workflows/benchmarks.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       benchmark_package_path: "Benchmarks"
 
@@ -72,7 +72,7 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: ./.github/workflows/cxx_interop.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
 
   construct-integration-test-matrix:
@@ -108,7 +108,7 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: ./.github/workflows/swift_test_matrix.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       name: "Integration tests"
       matrix_string: '${{ needs.construct-integration-test-matrix.outputs.integration-test-matrix }}'
@@ -146,7 +146,7 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: ./.github/workflows/static_sdk.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
 
   wasm-sdk:
@@ -154,7 +154,7 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: ./.github/workflows/wasm_swift_sdk.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
       additional_command_arguments: "--target NIOCore"
 
@@ -163,12 +163,12 @@ jobs:
     # Workaround https://github.com/nektos/act/issues/1875
     uses: ./.github/workflows/android_swift_sdk.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
 
   release-builds:
     name: Release builds
     uses: ./.github/workflows/release_builds.yml
     with:
-      chalk_on: ${{ (github.event_name == 'workflow_dispatch' && inputs.leg != 'baseline') && 'true' || 'false' }}
+      chalk_on: ${{ inputs.leg == 'instrumented' && 'true' || 'false' }}
       profile: ${{ inputs.profile || 'curiosity-tests-racecar' }}
